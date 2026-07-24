@@ -122,6 +122,7 @@ def _preprocess_onnx(
     trt_plugins_precision: list[str] | None,
     override_shapes: str,
     simplify: bool = False,
+    simplify_backend: str = "onnxslim",
     quantize_mode: str = "int8",
     opset: int | None = None,
 ) -> tuple[str, onnx.ModelProto, list[str], bool, bool, bool, dict, dict]:
@@ -218,10 +219,32 @@ def _preprocess_onnx(
 
     # Simplify model if requested
     if simplify:
-        logger.info("Attempting to simplify model")
+        logger.info(f"Attempting to simplify model with '{simplify_backend}'")
+
+        # Resolve the backend before attempting simplification so that a missing
+        # optional dependency or an unknown backend name fails loudly instead of
+        # being silently swallowed by the graceful fallback below.
+        if simplify_backend == "onnxsim":
+            try:
+                import onnxsim
+            except ModuleNotFoundError as e:
+                logger.warning(
+                    "onnxsim is not installed. Please install it with 'pip install onnxsim'."
+                )
+                raise e
+        elif simplify_backend != "onnxslim":
+            raise ValueError(
+                f"Unsupported simplify_backend '{simplify_backend}'. "
+                "Choose one of: 'onnxslim', 'onnxsim'."
+            )
+
         try:
-            model_simp = onnxslim.slim(onnx_model, skip_fusion_patterns=["FusionGemm"])
-            if model_simp:
+            if simplify_backend == "onnxslim":
+                model_simp = onnxslim.slim(onnx_model, skip_fusion_patterns=["FusionGemm"])
+                check = model_simp is not None
+            else:
+                model_simp, check = onnxsim.simplify(onnx_model)
+            if check:
                 onnx_model = model_simp
                 onnx_path = os.path.join(output_dir, f"{model_name}_simp.onnx")
                 save_onnx(onnx_model, onnx_path, use_external_data_format)
@@ -375,6 +398,7 @@ def quantize(
     use_zero_point: bool = False,
     passes: list[str] = ["concat_elimination"],
     simplify: bool = False,
+    simplify_backend: str = "onnxslim",
     calibrate_per_node: bool = False,
     input_shapes_profile: Sequence[dict[str, str]] | None = None,
     model_id: str | None = None,
@@ -477,6 +501,9 @@ def quantize(
             List of optimization passes name, if set, appropriate pre/post-processing passes will be invoked.
         simplify:
             Simplify the given model before quantization.
+        simplify_backend:
+            ONNX simplification package to use when ``simplify`` is set. One of ``"onnxslim"``
+            (default) or ``"onnxsim"``; both produce an equivalent simplified model.
         calibrate_per_node:
             Calibrate the model node by node instead of calibrating the entire model. This allows calibration with
             a lower system memory with the cost of longer calibration time.
@@ -627,6 +654,7 @@ def quantize(
         trt_plugins_precision,
         override_shapes,  # type: ignore[arg-type]
         simplify,
+        simplify_backend,
         quantize_mode,
         opset,
     )

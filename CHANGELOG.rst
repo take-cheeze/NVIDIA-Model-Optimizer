@@ -6,6 +6,10 @@ Changelog
 
 **New Features**
 
+*Misc*
+
+- Add ``onnxsim`` as an alternative ONNX simplification backend for ``modelopt.onnx.quantization.quantize(..., simplify=True)`` (and the ``--simplify`` CLI flag). The new ``simplify_backend`` argument / ``--simplify_backend`` flag selects between ``"onnxslim"`` (default, unchanged) and ``"onnxsim"``; both produce an equivalent simplified model. ``onnxsim>=0.7.0`` now ships wheels for Python 3.12+ and aarch64.
+
 **Backward Breaking Changes**
 
 **Deprecations**
